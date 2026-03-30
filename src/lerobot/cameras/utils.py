@@ -38,10 +38,36 @@ def make_cameras_from_configs(camera_configs: dict[str, CameraConfig]) -> dict[s
 
             cameras[key] = RealSenseCamera(cfg)
 
+        elif cfg.type in {
+            "realsense_d435i_color",
+            "realsense_d435i_depth",
+            "realsense_d405_color",
+            "realsense_d405_depth",
+        }:
+            from .realsense.camera_rs_d405 import RealSenseD405ColorCamera, RealSenseD405DepthCamera
+            from .realsense.camera_rs_d435i import RealSenseD435iColorCamera, RealSenseD435iDepthCamera
+
+            realsense_camera_classes = {
+                "realsense_d435i_color": RealSenseD435iColorCamera,
+                "realsense_d435i_depth": RealSenseD435iDepthCamera,
+                "realsense_d405_color": RealSenseD405ColorCamera,
+                "realsense_d405_depth": RealSenseD405DepthCamera,
+            }
+            cameras[key] = realsense_camera_classes[cfg.type](cfg)
+
         elif cfg.type == "reachy2_camera":
             from .reachy2_camera.reachy2_camera import Reachy2Camera
 
             cameras[key] = Reachy2Camera(cfg)
+
+        elif cfg.type in {"orbbec_color", "orbbec_depth"}:
+            from .orbbec.camera_orbbec import OrbbecColorCamera, OrbbecDepthCamera
+
+            orbbec_camera_classes = {
+                "orbbec_color": OrbbecColorCamera,
+                "orbbec_depth": OrbbecDepthCamera,
+            }
+            cameras[key] = orbbec_camera_classes[cfg.type](cfg)
 
         elif cfg.type == "zmq":
             from .zmq.camera_zmq import ZMQCamera

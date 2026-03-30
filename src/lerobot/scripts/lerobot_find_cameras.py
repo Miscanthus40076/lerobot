@@ -41,9 +41,19 @@ from lerobot.cameras.configs import ColorMode
 from lerobot.cameras.opencv.camera_opencv import OpenCVCamera
 from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
 from lerobot.cameras.realsense.camera_realsense import RealSenseCamera
-from lerobot.cameras.realsense.configuration_realsense import RealSenseCameraConfig
+from lerobot.cameras.realsense.camera_rs_d405 import RealSenseD405ColorCamera
+from lerobot.cameras.realsense.camera_rs_d435i import RealSenseD435iColorCamera
+from lerobot.cameras.realsense.configuration_rs_d405 import RealSenseD405ColorCameraConfig
+from lerobot.cameras.realsense.configuration_rs_d435i import RealSenseD435iColorCameraConfig
 
 logger = logging.getLogger(__name__)
+
+
+def _load_orbbec_camera_support():
+    from lerobot.cameras.orbbec.camera_orbbec import OrbbecColorCamera
+    from lerobot.cameras.orbbec.configuration_orbbec import OrbbecColorCameraConfig
+
+    return OrbbecColorCamera, OrbbecColorCameraConfig
 
 
 def find_all_opencv_cameras() -> list[dict[str, Any]]:
@@ -88,12 +98,35 @@ def find_all_realsense_cameras() -> list[dict[str, Any]]:
     return all_realsense_cameras_info
 
 
+def find_all_orbbec_cameras() -> list[dict[str, Any]]:
+    """
+    Finds all available Orbbec cameras plugged into the system.
+
+    Returns:
+        A list of all available Orbbec cameras with their metadata.
+    """
+    all_orbbec_cameras_info: list[dict[str, Any]] = []
+    logger.info("Searching for Orbbec cameras...")
+    try:
+        OrbbecColorCamera, _ = _load_orbbec_camera_support()
+        orbbec_cameras = OrbbecColorCamera.find_cameras()
+        for cam_info in orbbec_cameras:
+            all_orbbec_cameras_info.append(cam_info)
+        logger.info(f"Found {len(orbbec_cameras)} Orbbec cameras.")
+    except ImportError:
+        logger.warning("Skipping Orbbec camera search: pyorbbecsdk library not found or not importable.")
+    except Exception as e:
+        logger.error(f"Error finding Orbbec cameras: {e}")
+
+    return all_orbbec_cameras_info
+
+
 def find_and_print_cameras(camera_type_filter: str | None = None) -> list[dict[str, Any]]:
     """
     Finds available cameras based on an optional filter and prints their information.
 
     Args:
-        camera_type_filter: Optional string to filter cameras ("realsense" or "opencv").
+        camera_type_filter: Optional string to filter cameras ("realsense", "opencv", or "orbbec").
                             If None, lists all cameras.
 
     Returns:
@@ -108,12 +141,14 @@ def find_and_print_cameras(camera_type_filter: str | None = None) -> list[dict[s
         all_cameras_info.extend(find_all_opencv_cameras())
     if camera_type_filter is None or camera_type_filter == "realsense":
         all_cameras_info.extend(find_all_realsense_cameras())
+    if camera_type_filter is None or camera_type_filter == "orbbec":
+        all_cameras_info.extend(find_all_orbbec_cameras())
 
     if not all_cameras_info:
         if camera_type_filter:
             logger.warning(f"No {camera_type_filter} cameras were detected.")
         else:
-            logger.warning("No cameras (OpenCV or RealSense) were detected.")
+            logger.warning("No cameras (OpenCV, RealSense, or Orbbec) were detected.")
     else:
         print("\n--- Detected Cameras ---")
         for i, cam_info in enumerate(all_cameras_info):
@@ -169,11 +204,55 @@ def create_camera_instance(cam_meta: dict[str, Any]) -> dict[str, Any] | None:
             )
             instance = OpenCVCamera(cv_config)
         elif cam_type == "RealSense":
-            rs_config = RealSenseCameraConfig(
-                serial_number_or_name=cam_id,
-                color_mode=ColorMode.RGB,
-            )
-            instance = RealSenseCamera(rs_config)
+            camera_name = str(cam_meta.get("name", "")).upper().replace(" ", "")
+            if "D405" in camera_name:
+                instance = RealSenseD405ColorCamera(
+                    RealSenseD405ColorCameraConfig(
+                        serial_number_or_name=cam_id,
+                        color_mode=ColorMode.RGB,
+                    )
+                )
+            elif "D435I" in camera_name:
+                instance = RealSenseD435iColorCamera(
+                    RealSenseD435iColorCameraConfig(
+                        serial_number_or_name=cam_id,
+                        color_mode=ColorMode.RGB,
+                    )
+                )
+            else:
+                logger.warning(f"Unsupported RealSense model {cam_meta.get('name')} for camera {cam_id}. Skipping.")
+                return None
+        elif cam_type == "Orbbec":
+            OrbbecColorCamera, OrbbecColorCameraConfig = _load_orbbec_camera_support()
+
+            color_profile = cam_meta.get("default_color_stream_profile")
+            default_profile = cam_meta.get("default_stream_profile")
+
+            if isinstance(color_profile, dict):
+                instance = OrbbecColorCamera(
+                    OrbbecColorCameraConfig(
+                        serial_number_or_name=cam_id,
+                        fps=color_profile.get("fps"),
+                        width=color_profile.get("width"),
+                        height=color_profile.get("height"),
+                        color_mode=ColorMode.RGB,
+                    )
+                )
+            elif isinstance(default_profile, dict) and str(default_profile.get("stream_type", "")).lower() == "color":
+                instance = OrbbecColorCamera(
+                    OrbbecColorCameraConfig(
+                        serial_number_or_name=cam_id,
+                        fps=default_profile.get("fps"),
+                        width=default_profile.get("width"),
+                        height=default_profile.get("height"),
+                        color_mode=ColorMode.RGB,
+                    )
+                )
+            else:
+                logger.warning(
+                    f"Orbbec camera {cam_id} does not expose a usable default color stream profile. Skipping."
+                )
+                return None
         else:
             logger.warning(f"Unknown camera type: {cam_type} for ID {cam_id}. Skipping.")
             return None
@@ -199,7 +278,18 @@ def process_camera_image(
     cam_id_str = str(meta.get("id", "unknown"))
 
     try:
-        image_data = cam.read()
+        if hasattr(cam, "async_read"):
+            image_data = cam.async_read(timeout_ms=1500)
+        else:
+            image_data = cam.read()
+
+        if image_data is None:
+            logger.info(f"No image available yet from {cam_type_str} camera {cam_id_str}.")
+            return None
+
+        if image_data.ndim != 3 or image_data.shape[2] != 3:
+            logger.info(f"Skipping non-color image from {cam_type_str} camera {cam_id_str}.")
+            return None
 
         return save_image(
             image_data,
@@ -220,11 +310,25 @@ def cleanup_cameras(cameras_to_use: list[dict[str, Any]]):
     """Disconnect all cameras."""
     logger.info(f"Disconnecting {len(cameras_to_use)} cameras...")
     for cam_dict in cameras_to_use:
+        instance = cam_dict["instance"]
+        camera_id = cam_dict["meta"].get("id")
         try:
-            if cam_dict["instance"] and cam_dict["instance"].is_connected:
-                cam_dict["instance"].disconnect()
+            if not instance or not instance.is_connected:
+                continue
+
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            future = executor.submit(instance.disconnect)
+            try:
+                future.result(timeout=3.0)
+                executor.shutdown(wait=True)
+            except concurrent.futures.TimeoutError:
+                logger.warning(
+                    "Timed out while disconnecting camera %s. Continuing shutdown without waiting.",
+                    camera_id,
+                )
+                executor.shutdown(wait=False, cancel_futures=True)
         except Exception as e:
-            logger.error(f"Error disconnecting camera {cam_dict['meta'].get('id')}: {e}")
+            logger.error(f"Error disconnecting camera {camera_id}: {e}")
 
 
 def save_images_from_all_cameras(
@@ -239,7 +343,7 @@ def save_images_from_all_cameras(
     Args:
         output_dir: Directory to save images.
         record_time_s: Duration in seconds to record images.
-        camera_type: Optional string to filter cameras ("realsense" or "opencv").
+        camera_type: Optional string to filter cameras ("realsense", "opencv", or "orbbec").
                             If None, uses all detected cameras.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -296,8 +400,8 @@ def main():
         type=str,
         nargs="?",
         default=None,
-        choices=["realsense", "opencv"],
-        help="Specify camera type to capture from (e.g., 'realsense', 'opencv'). Captures from all if omitted.",
+        choices=["realsense", "opencv", "orbbec"],
+        help="Specify camera type to capture from (e.g., 'realsense', 'opencv', 'orbbec'). Captures from all if omitted.",
     )
     parser.add_argument(
         "--output-dir",
