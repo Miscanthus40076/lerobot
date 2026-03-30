@@ -12,12 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .camera_realsense import RealSenseCamera
-from .camera_rs_d405 import RealSenseD405ColorCamera, RealSenseD405DepthCamera
-from .camera_rs_d435i import RealSenseD435iColorCamera, RealSenseD435iDepthCamera
-from .configuration_realsense import RealSenseCameraConfig
-from .configuration_rs_d405 import RealSenseD405ColorCameraConfig, RealSenseD405DepthCameraConfig
-from .configuration_rs_d435i import (
+from .camera_realsense import (
+    D405_MODEL_TRAITS,
+    D435I_MODEL_TRAITS,
+    REALSENSE_MODEL_REGISTRY,
+    RealSenseModelTraits,
+    RealSenseD405ColorCamera,
+    RealSenseD405DepthCamera,
+    RealSenseD435iColorCamera,
+    RealSenseD435iDepthCamera,
+    SharedRealSenseColorCamera,
+    SharedRealSenseDepthCamera,
+    SharedRealSenseManager,
+    find_realsense_cameras,
+)
+from .configuration_realsense import (
+    RealSenseD405ColorCameraConfig,
+    RealSenseD405DepthCameraConfig,
     RealSenseD435iColorCameraConfig,
     RealSenseD435iDepthCameraConfig,
 )

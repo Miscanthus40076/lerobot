@@ -40,11 +40,15 @@ from PIL import Image
 from lerobot.cameras.configs import ColorMode
 from lerobot.cameras.opencv.camera_opencv import OpenCVCamera
 from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
-from lerobot.cameras.realsense.camera_realsense import RealSenseCamera
-from lerobot.cameras.realsense.camera_rs_d405 import RealSenseD405ColorCamera
-from lerobot.cameras.realsense.camera_rs_d435i import RealSenseD435iColorCamera
-from lerobot.cameras.realsense.configuration_rs_d405 import RealSenseD405ColorCameraConfig
-from lerobot.cameras.realsense.configuration_rs_d435i import RealSenseD435iColorCameraConfig
+from lerobot.cameras.realsense.camera_realsense import (
+    RealSenseD405ColorCamera,
+    RealSenseD435iColorCamera,
+    find_realsense_cameras,
+)
+from lerobot.cameras.realsense.configuration_realsense import (
+    RealSenseD405ColorCameraConfig,
+    RealSenseD435iColorCameraConfig,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +90,7 @@ def find_all_realsense_cameras() -> list[dict[str, Any]]:
     all_realsense_cameras_info: list[dict[str, Any]] = []
     logger.info("Searching for RealSense cameras...")
     try:
-        realsense_cameras = RealSenseCamera.find_cameras()
+        realsense_cameras = find_realsense_cameras()
         for cam_info in realsense_cameras:
             all_realsense_cameras_info.append(cam_info)
         logger.info(f"Found {len(realsense_cameras)} RealSense cameras.")
@@ -154,7 +158,7 @@ def find_and_print_cameras(camera_type_filter: str | None = None) -> list[dict[s
         for i, cam_info in enumerate(all_cameras_info):
             print(f"Camera #{i}:")
             for key, value in cam_info.items():
-                if key == "default_stream_profile" and isinstance(value, dict):
+                if isinstance(value, dict):
                     print(f"  {key.replace('_', ' ').capitalize()}:")
                     for sub_key, sub_value in value.items():
                         print(f"    {sub_key.capitalize()}: {sub_value}")
@@ -204,15 +208,15 @@ def create_camera_instance(cam_meta: dict[str, Any]) -> dict[str, Any] | None:
             )
             instance = OpenCVCamera(cv_config)
         elif cam_type == "RealSense":
-            camera_name = str(cam_meta.get("name", "")).upper().replace(" ", "")
-            if "D405" in camera_name:
+            model = str(cam_meta.get("model", "")).upper()
+            if model == "D405":
                 instance = RealSenseD405ColorCamera(
                     RealSenseD405ColorCameraConfig(
                         serial_number_or_name=cam_id,
                         color_mode=ColorMode.RGB,
                     )
                 )
-            elif "D435I" in camera_name:
+            elif model == "D435I":
                 instance = RealSenseD435iColorCamera(
                     RealSenseD435iColorCameraConfig(
                         serial_number_or_name=cam_id,
@@ -220,7 +224,7 @@ def create_camera_instance(cam_meta: dict[str, Any]) -> dict[str, Any] | None:
                     )
                 )
             else:
-                logger.warning(f"Unsupported RealSense model {cam_meta.get('name')} for camera {cam_id}. Skipping.")
+                logger.warning(f"Unsupported RealSense model {cam_meta.get('model')} for camera {cam_id}. Skipping.")
                 return None
         elif cam_type == "Orbbec":
             OrbbecColorCamera, OrbbecColorCameraConfig = _load_orbbec_camera_support()
@@ -355,7 +359,16 @@ def save_images_from_all_cameras(
         return
 
     cameras_to_use = []
+    orbbec_capture_reserved = False
     for cam_meta in all_camera_metadata:
+        if cam_meta.get("type") == "Orbbec":
+            if orbbec_capture_reserved:
+                logger.warning(
+                    "Skipping additional Orbbec camera %s during image capture because current Orbbec configs are not device-specific.",
+                    cam_meta.get("id"),
+                )
+                continue
+            orbbec_capture_reserved = True
         camera_instance = create_camera_instance(cam_meta)
         if camera_instance:
             cameras_to_use.append(camera_instance)

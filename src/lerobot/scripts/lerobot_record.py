@@ -73,8 +73,11 @@ from lerobot.cameras import (  # noqa: F401
     CameraConfig,  # noqa: F401
 )
 from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig  # noqa: F401
+from lerobot.cameras.orbbec.configuration_orbbec import (  # noqa: F401
+    OrbbecColorCameraConfig,
+    OrbbecDepthCameraConfig,
+)
 from lerobot.cameras.reachy2_camera.configuration_reachy2_camera import Reachy2CameraConfig  # noqa: F401
-from lerobot.cameras.realsense.configuration_realsense import RealSenseCameraConfig  # noqa: F401
 from lerobot.cameras.realsense.configuration_rs_d405 import (  # noqa: F401
     RealSenseD405ColorCameraConfig,
     RealSenseD405DepthCameraConfig,
@@ -82,10 +85,6 @@ from lerobot.cameras.realsense.configuration_rs_d405 import (  # noqa: F401
 from lerobot.cameras.realsense.configuration_rs_d435i import (  # noqa: F401
     RealSenseD435iColorCameraConfig,
     RealSenseD435iDepthCameraConfig,
-)
-from lerobot.cameras.orbbec.configuration_orbbec import (  # noqa: F401
-    OrbbecColorCameraConfig,
-    OrbbecDepthCameraConfig,
 )
 from lerobot.cameras.zmq.configuration_zmq import ZMQCameraConfig  # noqa: F401
 from lerobot.configs import parser

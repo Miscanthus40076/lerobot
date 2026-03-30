@@ -9,6 +9,6 @@ try:
         SharedOrbbecManager,
         find_orbbec_cameras,
     )
-except Exception:
-    # Allow importing Orbbec config classes even when pyorbbecsdk is not installed.
+except ImportError:
+    # Allow config imports and CLI module loading on machines without the Orbbec SDK.
     pass
